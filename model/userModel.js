@@ -20,6 +20,13 @@ const userSchema = new moongose.Schema({
     type: String,
     require: true,
   },
+  product:[
+    {
+      type:moongose.Schema.Types.ObjectId,
+      ref:'Product'
+    }
+  ],
+    
 });
-const User =moongose.model('users',userSchema);
+const User =moongose.model('User',userSchema);
 module.exports=User;
