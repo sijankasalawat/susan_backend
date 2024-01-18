@@ -1,6 +1,9 @@
 const Users =require("../model/userModel");
 const bcrypt = require("bcrypt");
 const jwt = require('jsonwebtoken');
+const crypto = require("crypto");
+const { sendEmail } = require("../middleware/sendEmail");
+
 const createUser = async (req,res) => {
     // step 1 : Check if data is coming or not
     console.log(req.body);
@@ -95,10 +98,100 @@ const loginUser = async (req, res)=>{
           });
 
       }
-
 }
+const forgotPassword = async (req, res) => {
+  console.log(req.body);
+  try {
+    const user = await Users.findOne({ email: req.body.email });
+    
+    if (!user) {
+      return res.json({
+        success: false,
+        message: "Email not found.",
+      });
+    }
+    const resetPasswordToken = user.getResetPasswordToken();
 
+    await user.save();
+
+    // Assuming you have a configuration variable for the frontend URL
+    const frontendBaseUrl = process.env.FRONTEND_BASE_URL || "http://localhost:3000";
+    const resetUrl = `${frontendBaseUrl}/password/reset/${resetPasswordToken}`;
+
+    const message = `Reset Your Password by clicking on the link below: \n\n ${resetUrl}`;
+
+    try {
+      await sendEmail({
+        email: user.email,
+        subject: "Reset Password",
+        message,
+      });
+
+      res.status(200).json({
+        success: true,
+        message: `Email sent to ${user.email}`,
+      });
+    } catch (error) {
+      user.resetPasswordToken = undefined;
+      user.resetPasswordExpire = undefined;
+      await user.save();
+
+      res.json({
+        success: false,
+        message: error.message,
+      });
+    }
+  } catch (error) {
+    console.log(error);
+    res.json({
+      success: false,
+      message: error.message,
+    });
+  }
+};
+
+const resetPassword = async (req, res) => {
+  try {
+    const resetPasswordToken = crypto
+      .createHash("sha256")
+      .update(req.params.token)
+      .digest("hex");
+
+    const user = await Users.findOne({
+      resetPasswordToken,
+      resetPasswordExpire: { $gt: Date.now() },
+    });
+
+    if (!user) {
+      return res.status(401).json({
+        success: false,
+        message: "Token is invalid or has expired",
+      });
+    }
+
+    // Hash the new password before updating
+    const randomSalt = await bcrypt.genSalt(10);
+    const encryptedPassword = await bcrypt.hash(req.body.password, randomSalt);
+
+    user.password = encryptedPassword;
+
+    user.resetPasswordToken = undefined;
+    user.resetPasswordExpire = undefined;
+    await user.save();
+
+    res.status(200).json({
+      success: true,
+      message: "Password Updated",
+    });
+  } catch (error) {
+    console.log(error);
+    res.status(500).json({
+      success: false,
+      message: error.message,
+    });
+  }
+};
 
 module.exports={
-    createUser,loginUser
+    createUser,loginUser,forgotPassword,resetPassword
 }
