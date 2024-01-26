@@ -154,10 +154,10 @@ const getProductsByUserId = async (req, res) => {
   }
 };
 
+
 const deleteProduct = async (req, res) => {
   try {
-    console.log(req.user)
-    const productId = req.params.id;
+    const productId = req.params.productId;
 
     // Check if the product exists
     const product = await Product.findById(productId);
@@ -167,9 +167,28 @@ const deleteProduct = async (req, res) => {
         message: 'Product not found.',
       });
     }
-    // Delete the product
-    await product.deleteOne();
-    console.log('Product ID to delete:', productId);
+
+    // Check if the user making the request is the owner of the product
+    const userId = req.user.id; // Assuming you have the user's ID from the authentication token
+    if (userId.toString() !== product.owner.toString()) {
+      return res.status(403).json({
+        success: false,
+        message: 'You do not have permission to delete this product.',
+      });
+    }
+
+    // Delete the product from Cloudinary
+    const publicId = product.productImage.split('/').pop().split('.')[0];
+    await cloudinary.v2.uploader.destroy(`products/${publicId}`);
+
+    // Delete the product from the database
+    await Product.findByIdAndDelete(productId);
+
+    // Remove the product ID from the user's products array
+    const user = await User.findById(userId);
+    user.product = user.product.filter((id) => id.toString() !== productId.toString());
+    await user.save();
+
     res.json({
       success: true,
       message: 'Product deleted successfully.',
@@ -183,4 +202,6 @@ const deleteProduct = async (req, res) => {
     });
   }
 };
-module.exports = { createProduct, getProduct, getProductsByUserId,deleteProduct };
+
+module.exports = { createProduct, getProduct, getProductsByUserId, deleteProduct };
+
